@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{{ app_title }}</title>
+<meta http-equiv="refresh" content="{{ refresh_interval }}">
+<style>
+  :root {
+    --bg:      #0f172a; --surface: #1e293b; --border: #334155;
+    --text:    #e2e8f0; --muted:   #94a3b8; --accent: #3b82f6;
+    --green:   #22c55e; --red:     #ef4444; --yellow: #f59e0b;
+    --purple:  #8b5cf6; --blue:    #3b82f6; --gray:   #6b7280;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, sans-serif; font-size: 13px; }
+
+  header { background: var(--surface); border-bottom: 1px solid var(--border); padding: 12px 20px; display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+  header h1 { font-size: 15px; font-weight: 600; color: #fff; }
+  .hmeta { color: var(--muted); font-size: 11px; text-align: right; line-height: 1.6; }
+  .hlinks { display: flex; gap: 8px; }
+  .hlinks a { color: var(--accent); text-decoration: none; font-size: 12px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 4px; white-space: nowrap; }
+  .hlinks a:hover { border-color: var(--accent); }
+
+  .stats { display: flex; gap: 10px; padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+  .stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 18px; text-align: center; min-width: 90px; cursor: pointer; transition: border-color .15s; }
+  .stat:hover, .stat.active { border-color: var(--accent); background: rgba(59,130,246,.07); }
+  .stat .val { font-size: 26px; font-weight: 700; line-height: 1; }
+  .stat .lbl { font-size: 10px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .5px; }
+
+  .filters { padding: 10px 20px; background: var(--bg); border-bottom: 1px solid var(--border); display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .filters input { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 5px 10px; border-radius: 4px; font-size: 12px; min-width: 160px; }
+  .filters input:focus { outline: none; border-color: var(--accent); }
+  .filters select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 5px 8px; border-radius: 4px; font-size: 12px; }
+  .btn { padding: 5px 14px; border-radius: 4px; font-size: 12px; cursor: pointer; border: none; }
+  .btn-primary { background: var(--accent); color: #fff; }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .btn-ghost:hover { border-color: var(--accent); color: var(--text); }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  th { background: var(--surface); padding: 8px 12px; text-align: left; color: var(--muted); font-weight: 500; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 1; white-space: nowrap; }
+  td { padding: 7px 12px; border-bottom: 1px solid rgba(51,65,85,.35); vertical-align: middle; }
+  tr:hover td { background: rgba(255,255,255,.02); }
+  tr { cursor: pointer; }
+
+  .badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 9px; border-radius: 10px; font-size: 11px; font-weight: 700; color: #000; white-space: nowrap; }
+  .qid { font-family: monospace; font-size: 11px; color: var(--muted); }
+  .addr { font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
+  .client-ip { font-size: 11px; color: var(--muted); white-space: nowrap; }
+  .detail-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; transition: all .2s; }
+  .detail-cell.open { white-space: normal; word-break: break-all; max-width: 400px; }
+  .ts { white-space: nowrap; color: var(--muted); font-size: 11px; }
+  .sz { white-space: nowrap; color: var(--muted); text-align: right; font-size: 12px; }
+
+  .empty { padding: 60px; text-align: center; color: var(--muted); }
+  .empty .icon { font-size: 40px; margin-bottom: 12px; }
+
+  .logsrc { font-size: 11px; color: var(--gray); padding: 6px 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  footer { padding: 10px 20px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>📬 {{ app_title }}</h1>
+  <div class="hmeta">
+    Son güncelleme: {{ now }}<br>
+    {{ refresh_interval }}sn otomatik yenileme
+  </div>
+  <div class="hlinks">
+    <a href="/api/events" target="_blank">JSON</a>
+    <a href="/">🔄 Yenile</a>
+  </div>
+</header>
+
+<!-- İstatistik kartları -->
+<div class="stats">
+  {% set url_base = '/?from=' + filter_from + ('&to=' + filter_to if filter_to else '') %}
+  <div class="stat {{ 'active' if not filter_status }}" onclick="location='{{ url_base }}'">
+    <div class="val">{{ stats.get('total', 0) }}</div>
+    <div class="lbl">Toplam</div>
+  </div>
+  {% for st, color, lbl in [
+      ('sent',     '--green',  'Gönderildi'),
+      ('bounced',  '--red',    'Hata'),
+      ('deferred', '--yellow', 'Ertelendi'),
+      ('rejected', '--purple', 'Reddedildi'),
+      ('queued',   '--blue',   'Kuyrukta'),
+  ] %}
+  <div class="stat {{ 'active' if filter_status == st }}"
+       onclick="location='{{ url_base }}&status={{ st }}'">
+    <div class="val" style="color:var({{ color }})">{{ stats.get(st, 0) }}</div>
+    <div class="lbl">{{ lbl }}</div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Filtreler -->
+<form class="filters" method="GET">
+  {% if filter_status %}<input type="hidden" name="status" value="{{ filter_status }}">{% endif %}
+  <input type="text" name="from" placeholder="Gönderen (from)…" value="{{ filter_from }}">
+  <input type="text" name="to"   placeholder="Alıcı (to)…"      value="{{ filter_to }}">
+  <select name="limit">
+    {% for l in [100, 200, 500, 1000] %}
+    <option value="{{ l }}" {{ 'selected' if request.args.get('limit', '200')|int == l }}>{{ l }} kayıt</option>
+    {% endfor %}
+  </select>
+  <button type="submit" class="btn btn-primary">Filtrele</button>
+  <a href="/" class="btn btn-ghost">Temizle</a>
+</form>
+
+<!-- Log kaynağı -->
+<div class="logsrc">Log kaynağı: {{ log_source }}</div>
+
+<!-- Tablo -->
+<div class="table-wrap">
+{% if events %}
+<table>
+  <thead>
+    <tr>
+      <th>Zaman</th>
+      <th>Queue ID</th>
+      <th>Gönderen (From)</th>
+      <th>Kaynak Cihaz</th>
+      <th>Alıcı (To)</th>
+      <th>Durum</th>
+      <th style="text-align:right">Boyut</th>
+      <th>Detay</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for event in events %}
+      {% set rc = event.recipients | length %}
+      {% for i in range(rc) %}
+        {% set r = event.recipients[i] %}
+        <tr onclick="toggleDetail(this)">
+          {% if i == 0 %}
+          <td class="ts"  rowspan="{{ rc }}">{{ event.timestamp }}</td>
+          <td class="qid" rowspan="{{ rc }}">{{ event.queue_id[:10] }}</td>
+          <td rowspan="{{ rc }}"><span class="addr" title="{{ event.from }}">{{ event.from }}</span></td>
+          <td rowspan="{{ rc }}" class="client-ip">{{ event.client or '—' }}</td>
+          {% endif %}
+          <td><span class="addr" title="{{ r.to }}">{{ r.to }}</span></td>
+          <td>
+            <span class="badge" style="background:{{ status_colors.get(r.status, '#6b7280') }}">
+              {{ status_icons.get(r.status, '?') }} {{ r.status.upper() }}
+            </span>
+          </td>
+          {% if i == 0 %}
+          <td class="sz" rowspan="{{ rc }}">
+            {% if event.size > 0 %}{{ "%.1f"|format(event.size / 1024) }} KB{% else %}—{% endif %}
+          </td>
+          {% endif %}
+          <td><div class="detail-cell" title="{{ r.detail }}">{{ r.detail or '—' }}</div></td>
+        </tr>
+      {% endfor %}
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<div class="empty">
+  <div class="icon">📭</div>
+  <p>Log kaydı bulunamadı.</p>
+  {% if filter_status or filter_from or filter_to %}
+  <p style="margin-top:10px"><a href="/" style="color:var(--accent)">← Filtreleri temizle</a></p>
+  {% else %}
+  <p style="margin-top:8px;font-size:12px;color:var(--gray)">Log kaynağı: {{ log_source }}</p>
+  {% endif %}
+</div>
+{% endif %}
+</div>
+
+<footer>
+  <span>{{ total_shown }} kayıt gösteriliyor</span>
+  <span>{{ app_title }}</span>
+</footer>
+
+<script>
+function toggleDetail(row) {
+  const cell = row.querySelector('.detail-cell');
+  if (cell) cell.classList.toggle('open');
+}
+</script>
+</body>
+</html>

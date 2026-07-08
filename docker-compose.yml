@@ -1,0 +1,141 @@
+###############################################################################
+# Postfix Outbound Relay Stack
+#
+# Amaç    : Outbound-only mail gönderimi (inbound/IMAP yok)
+# Relay   : ${MYNETWORKS} içinden kimlik doğrulama olmadan iletilir
+# Gönderen: Herhangi bir @${MAIL_DOMAIN} adresi — hesap oluşturmak gerekmez
+# UI      : ${ADMIN_HOST}/maillog — Cloudflare Tunnel / Traefik uyumlu
+# SSL     : Sunucudaki mevcut sertifikayı ${SSL_CERT_DIR} ile bind mount eder
+#
+# Kullanım: .env dosyasını doldur → docker compose up -d
+# Repo    : https://github.com/USERNAME/postfix-relay
+###############################################################################
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # POSTFIX — Outbound SMTP relay
+  # ---------------------------------------------------------------------------
+  postfix:
+    image: boky/postfix:latest
+    container_name: ${COMPOSE_PROJECT_NAME}_postfix
+    restart: unless-stopped
+    environment:
+      HOSTNAME:   ${MAIL_HOSTNAME}
+      DOMAINNAME: ${MAIL_DOMAIN}
+      MYNETWORKS: ${MYNETWORKS}
+
+      # Upstream relay (opsiyonel — boş = direkt MX delivery)
+      RELAYHOST:     ${RELAYHOST:-}
+      SMTP_SERVER:   ${SMTP_SMARTHOST:-}
+      SMTP_USERNAME: ${SMTP_SMARTHOST_USER:-}
+      SMTP_PASSWORD: ${SMTP_SMARTHOST_PASS:-}
+      SMTP_PORT:     ${SMTP_SMARTHOST_PORT:-587}
+
+      # --- Gönderen adres doğrulaması KAPALI ---
+      # mynetworks'ten gelen mailler herhangi bir From: adresi kullanabilir
+      # printer@domain, noreply@domain vb. — hesap oluşturmak GEREKMEZ
+      POSTFIX_smtpd_sender_restrictions: "permit_mynetworks, permit_sasl_authenticated, permit"
+      POSTFIX_smtpd_recipient_restrictions: "permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination"
+      POSTFIX_smtpd_relay_restrictions: "permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination"
+      POSTFIX_reject_sender_login_mismatch: ""
+      POSTFIX_smtpd_sender_login_maps: ""
+
+      # TLS
+      POSTFIX_smtpd_tls_cert_file:    /etc/ssl/mail/fullchain.pem
+      POSTFIX_smtpd_tls_key_file:     /etc/ssl/mail/privkey.pem
+      POSTFIX_smtpd_tls_security_level: may
+      POSTFIX_smtp_tls_security_level:  may
+
+      # Mesaj boyutu limiti
+      POSTFIX_message_size_limit: ${MAX_MESSAGE_SIZE:-26214400}
+
+      # Temel parametreler
+      POSTFIX_myhostname:    ${MAIL_HOSTNAME}
+      POSTFIX_mydomain:      ${MAIL_DOMAIN}
+      POSTFIX_myorigin:      ${MAIL_DOMAIN}
+
+      # Boş = inbound delivery yok (sadece outbound relay)
+      # Mail almak istersen: "${MAIL_HOSTNAME}, ${MAIL_DOMAIN}, localhost"
+      POSTFIX_mydestination: ${POSTFIX_MYDESTINATION:-}
+
+      POSTFIX_maillog_file: /dev/stdout
+
+    volumes:
+      - ${SSL_CERT_DIR}:/etc/ssl/mail:ro
+      - postfix_spool:/var/spool/postfix
+      - postfix_logs:/var/log/postfix
+
+    ports:
+      - "${SMTP_BIND_IP:-0.0.0.0}:${SMTP_PORT:-25}:25"
+
+    networks:
+      - internal
+      - proxy
+
+    labels:
+      - "traefik.enable=false"
+
+  # ---------------------------------------------------------------------------
+  # LOG VIEWER — Mail akış izleme web arayüzü
+  # ${ADMIN_HOST}/maillog adresinde Traefik üzerinden yayınlanır
+  # ---------------------------------------------------------------------------
+  logviewer:
+    build:
+      context: ./logviewer
+      dockerfile: Dockerfile
+    container_name: ${COMPOSE_PROJECT_NAME}_logviewer
+    restart: unless-stopped
+    environment:
+      LOG_REFRESH_INTERVAL: "${LOG_REFRESH_INTERVAL:-30}"
+      ALLOWED_NETWORKS:     "${LOGVIEWER_ALLOWED_NETWORKS:-0.0.0.0/0}"
+      APP_TITLE:            "${MAIL_DOMAIN} Mail Log"
+    volumes:
+      - postfix_logs:/var/log/postfix:ro
+    networks:
+      - internal
+      - proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.docker.network=${TRAEFIK_NETWORK:-dokploy-network}"
+      # HTTPS
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.rule=Host(`${ADMIN_HOST}`) && PathPrefix(`/maillog`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.entrypoints=websecure"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.tls=true"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.service=${COMPOSE_PROJECT_NAME}-maillog-svc"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.priority=10"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.middlewares=${COMPOSE_PROJECT_NAME}-strip,${COMPOSE_PROJECT_NAME}-ipwl"
+      # StripPrefix: /maillog kaldır
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-strip.stripprefix.prefixes=/maillog"
+      # IP Whitelist
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-ipwl.ipwhitelist.sourcerange=${LOGVIEWER_ALLOWED_NETWORKS:-0.0.0.0/0}"
+      # HTTP → HTTPS
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog-http.rule=Host(`${ADMIN_HOST}`) && PathPrefix(`/maillog`)"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog-http.entrypoints=web"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog-http.middlewares=${COMPOSE_PROJECT_NAME}-https-redir"
+      - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog-http.priority=10"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-https-redir.redirectscheme.scheme=https"
+      - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-https-redir.redirectscheme.permanent=true"
+      # Service
+      - "traefik.http.services.${COMPOSE_PROJECT_NAME}-maillog-svc.loadbalancer.server.port=8080"
+      - "com.centurylinklabs.watchtower.enable=true"
+
+# ---------------------------------------------------------------------------
+# VOLUMES
+# ---------------------------------------------------------------------------
+volumes:
+  postfix_spool:
+    driver: local
+  postfix_logs:
+    driver: local
+
+# ---------------------------------------------------------------------------
+# NETWORKS
+# ---------------------------------------------------------------------------
+networks:
+  internal:
+    driver: bridge
+
+  proxy:
+    external: true
+    name: ${TRAEFIK_NETWORK:-dokploy-network}

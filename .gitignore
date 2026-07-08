@@ -1,0 +1,20 @@
+# Hassas dosyalar — ASLA commit etme
+.env
+*.pem
+*.key
+
+# Veri
+data/
+volumes/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Editor
+.DS_Store
+*.swp
+*.bak
+.idea/
+.vscode/
