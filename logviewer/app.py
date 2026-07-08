@@ -15,13 +15,23 @@ from flask import Flask, render_template, request, jsonify, abort
 
 app = Flask(__name__)
 
-APP_TITLE = os.getenv("APP_TITLE", "Mail Log Viewer")
+APP_TITLE  = os.getenv("APP_TITLE", "Mail Log Viewer")
+
+# Traefik StripPrefix /maillog'u kaldırıyor — Flask'a / geliyor.
+# Tüm linklerin /maillog prefix'i ile üretilmesi için base path tanımlıyoruz.
+BASE_PATH = os.getenv("BASE_PATH", "/maillog")
 
 LOG_PATHS = [
     "/var/log/postfix/mail.log",
     "/var/log/mail.log",
     "/var/log/syslog",
 ]
+
+# Postfix logları /dev/stdout'a yazılıyorsa docker logs üzerinden okuyoruz.
+# Container kendi logunu /proc/1/fd/1'den okuyamaz, bu yüzden
+# docker-compose'da POSTFIX_maillog_file=/var/log/postfix/mail.log
+# veya rsyslog ile dosyaya yazılması gerekiyor.
+# Bu uygulama her iki modu da destekler.
 
 STATUS_COLORS = {
     "sent":      "#22c55e",
@@ -204,7 +214,10 @@ def index():
         events = [e for e in events if any(filter_to.lower() in r["to"].lower() for r in e["recipients"])]
 
     events = events[:limit]
-    log_source = next((p for p in LOG_PATHS if os.path.exists(p) and os.path.getsize(p) > 0), "bulunamadı")
+    log_source = next(
+        (p for p in LOG_PATHS if os.path.exists(p) and os.path.getsize(p) > 0),
+        None
+    )
 
     return render_template(
         "index.html",
@@ -220,6 +233,7 @@ def index():
         total_shown=len(events),
         log_source=log_source,
         app_title=APP_TITLE,
+        base_path=BASE_PATH,
     )
 
 

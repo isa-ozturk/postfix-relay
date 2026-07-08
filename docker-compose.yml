@@ -18,7 +18,7 @@ services:
   # ---------------------------------------------------------------------------
   postfix:
     image: boky/postfix:latest
-    container_name: ${COMPOSE_PROJECT_NAME:-mailserver}_postfix
+    container_name: mailserver_postfix
     restart: unless-stopped
     environment:
       HOSTNAME:   ${MAIL_HOSTNAME}
@@ -70,7 +70,8 @@ services:
       # Mail almak istersen: "${MAIL_HOSTNAME}, ${MAIL_DOMAIN}, localhost"
       POSTFIX_mydestination: ${POSTFIX_MYDESTINATION:-}
 
-      POSTFIX_maillog_file: /dev/stdout
+      # Logları hem stdout hem dosyaya yaz (logviewer için dosya gerekli)
+      POSTFIX_maillog_file: /var/log/postfix/mail.log
 
     volumes:
       - ${SSL_CERT_DIR}:/etc/ssl/mail:ro
@@ -97,7 +98,7 @@ services:
     build:
       context: ./logviewer
       dockerfile: Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME:-mailserver}_logviewer
+    container_name: mailserver_logviewer
     restart: unless-stopped
     environment:
       LOG_REFRESH_INTERVAL: "${LOG_REFRESH_INTERVAL:-30}"

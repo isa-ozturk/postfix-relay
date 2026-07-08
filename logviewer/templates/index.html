@@ -23,7 +23,7 @@
   .hlinks a:hover { border-color: var(--accent); }
 
   .stats { display: flex; gap: 10px; padding: 12px 20px; background: var(--surface); border-bottom: 1px solid var(--border); flex-wrap: wrap; }
-  .stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 18px; text-align: center; min-width: 90px; cursor: pointer; transition: border-color .15s; }
+  .stat { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 18px; text-align: center; min-width: 90px; cursor: pointer; transition: border-color .15s; text-decoration: none; display: block; }
   .stat:hover, .stat.active { border-color: var(--accent); background: rgba(59,130,246,.07); }
   .stat .val { font-size: 26px; font-weight: 700; line-height: 1; }
   .stat .lbl { font-size: 10px; color: var(--muted); margin-top: 4px; text-transform: uppercase; letter-spacing: .5px; }
@@ -34,8 +34,11 @@
   .filters select { background: var(--surface); border: 1px solid var(--border); color: var(--text); padding: 5px 8px; border-radius: 4px; font-size: 12px; }
   .btn { padding: 5px 14px; border-radius: 4px; font-size: 12px; cursor: pointer; border: none; }
   .btn-primary { background: var(--accent); color: #fff; }
-  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); }
+  .btn-ghost { background: transparent; border: 1px solid var(--border); color: var(--muted); text-decoration: none; display: inline-block; }
   .btn-ghost:hover { border-color: var(--accent); color: var(--text); }
+
+  .log-src { font-size: 11px; color: var(--gray); padding: 5px 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
+  .log-src.warn { color: var(--yellow); }
 
   .table-wrap { overflow-x: auto; }
   table { width: 100%; border-collapse: collapse; }
@@ -48,7 +51,7 @@
   .qid { font-family: monospace; font-size: 11px; color: var(--muted); }
   .addr { font-size: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: block; }
   .client-ip { font-size: 11px; color: var(--muted); white-space: nowrap; }
-  .detail-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; transition: all .2s; }
+  .detail-cell { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
   .detail-cell.open { white-space: normal; word-break: break-all; max-width: 400px; }
   .ts { white-space: nowrap; color: var(--muted); font-size: 11px; }
   .sz { white-space: nowrap; color: var(--muted); text-align: right; font-size: 12px; }
@@ -56,7 +59,6 @@
   .empty { padding: 60px; text-align: center; color: var(--muted); }
   .empty .icon { font-size: 40px; margin-bottom: 12px; }
 
-  .logsrc { font-size: 11px; color: var(--gray); padding: 6px 20px; background: var(--surface); border-bottom: 1px solid var(--border); }
   footer { padding: 10px 20px; color: var(--muted); font-size: 11px; border-top: 1px solid var(--border); display: flex; justify-content: space-between; }
 </style>
 </head>
@@ -69,18 +71,21 @@
     {{ refresh_interval }}sn otomatik yenileme
   </div>
   <div class="hlinks">
-    <a href="/api/events" target="_blank">JSON</a>
-    <a href="/">🔄 Yenile</a>
+    <a href="{{ base_path }}/api/events" target="_blank">JSON</a>
+    <a href="{{ base_path }}/">🔄 Yenile</a>
   </div>
 </header>
 
-<!-- İstatistik kartları -->
+<!-- İstatistik kartları — tüm linkler base_path ile -->
 <div class="stats">
-  {% set url_base = '/?from=' + filter_from + ('&to=' + filter_to if filter_to else '') %}
-  <div class="stat {{ 'active' if not filter_status }}" onclick="location='{{ url_base }}'">
+  {% set bp = base_path %}
+  {% set qfrom = ('&from=' + filter_from) if filter_from else '' %}
+  {% set qto   = ('&to='   + filter_to)   if filter_to   else '' %}
+
+  <a class="stat {{ 'active' if not filter_status }}" href="{{ bp }}/?{{ qfrom }}{{ qto }}">
     <div class="val">{{ stats.get('total', 0) }}</div>
     <div class="lbl">Toplam</div>
-  </div>
+  </a>
   {% for st, color, lbl in [
       ('sent',     '--green',  'Gönderildi'),
       ('bounced',  '--red',    'Hata'),
@@ -88,16 +93,17 @@
       ('rejected', '--purple', 'Reddedildi'),
       ('queued',   '--blue',   'Kuyrukta'),
   ] %}
-  <div class="stat {{ 'active' if filter_status == st }}"
-       onclick="location='{{ url_base }}&status={{ st }}'">
+  <a class="stat {{ 'active' if filter_status == st }}"
+     href="{{ bp }}/?status={{ st }}{{ qfrom }}{{ qto }}"
+     style="text-decoration:none">
     <div class="val" style="color:var({{ color }})">{{ stats.get(st, 0) }}</div>
     <div class="lbl">{{ lbl }}</div>
-  </div>
+  </a>
   {% endfor %}
 </div>
 
-<!-- Filtreler -->
-<form class="filters" method="GET">
+<!-- Filtreler — action base_path ile -->
+<form class="filters" method="GET" action="{{ base_path }}/">
   {% if filter_status %}<input type="hidden" name="status" value="{{ filter_status }}">{% endif %}
   <input type="text" name="from" placeholder="Gönderen (from)…" value="{{ filter_from }}">
   <input type="text" name="to"   placeholder="Alıcı (to)…"      value="{{ filter_to }}">
@@ -107,11 +113,18 @@
     {% endfor %}
   </select>
   <button type="submit" class="btn btn-primary">Filtrele</button>
-  <a href="/" class="btn btn-ghost">Temizle</a>
+  <a href="{{ base_path }}/" class="btn btn-ghost">Temizle</a>
 </form>
 
-<!-- Log kaynağı -->
-<div class="logsrc">Log kaynağı: {{ log_source }}</div>
+<!-- Log kaynağı durumu -->
+{% if log_source %}
+<div class="log-src">📄 Log kaynağı: {{ log_source }}</div>
+{% else %}
+<div class="log-src warn">
+  ⚠️ Log dosyası bulunamadı — Postfix logları henüz dosyaya yazılmıyor.
+  Sunucuda: <code>docker exec hch_postfix mailq</code> ile kuyruk durumunu kontrol et.
+</div>
+{% endif %}
 
 <!-- Tablo -->
 <div class="table-wrap">
@@ -163,9 +176,7 @@
   <div class="icon">📭</div>
   <p>Log kaydı bulunamadı.</p>
   {% if filter_status or filter_from or filter_to %}
-  <p style="margin-top:10px"><a href="/" style="color:var(--accent)">← Filtreleri temizle</a></p>
-  {% else %}
-  <p style="margin-top:8px;font-size:12px;color:var(--gray)">Log kaynağı: {{ log_source }}</p>
+  <p style="margin-top:10px"><a href="{{ base_path }}/" style="color:var(--accent)">← Filtreleri temizle</a></p>
   {% endif %}
 </div>
 {% endif %}
