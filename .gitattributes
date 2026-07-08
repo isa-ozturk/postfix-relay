@@ -1,0 +1,5 @@
+# Shell scriptleri her platformda LF olarak tut (Windows CRLF Docker'da bozar)
+*.sh text eol=lf
+entrypoint-wrapper.sh text eol=lf
+*.template text eol=lf
+Dockerfile* text eol=lf

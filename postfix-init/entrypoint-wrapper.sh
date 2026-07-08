@@ -15,4 +15,4 @@ echo "[entrypoint-wrapper] /etc/postfix/header_checks oluşturuldu:"
 cat /etc/postfix/header_checks
 
 # Orijinal boky/postfix entrypoint'ini çalıştır
-exec /bin/entrypoint.sh "$@"
+exec /scripts/run.sh "$@"
