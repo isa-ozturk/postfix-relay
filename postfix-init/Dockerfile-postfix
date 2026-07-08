@@ -1,7 +1,10 @@
 FROM boky/postfix:latest
 
-# header_checks template'ini kopyala
-COPY header_checks.template /etc/postfix/header_checks.template
+# header_checks template'ini kopyala.
+# ÖNEMLİ: boky/postfix imajı /etc/postfix'i VOLUME olarak ilan eder; o yola
+# yapılan COPY build sırasında Docker tarafından atılır. Bu yüzden template'i
+# volume OLMAYAN bir yola koyuyoruz; wrapper runtime'da /etc/postfix'e yazar.
+COPY header_checks.template /header_checks.template
 
 # Entrypoint wrapper: MAIL_DISPLAY_NAME env'den alarak
 # header_checks dosyasını oluşturur, sonra orijinal entrypoint'i çalıştırır

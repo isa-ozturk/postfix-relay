@@ -1,4 +1,6 @@
-# Postfix smtp_header_checks — otomatik oluşturuldu
+# Postfix header_checks — otomatik oluşturuldu
 # MAIL_DISPLAY_NAME: __DISPLAY_NAME__
-/^From: (root|www|daemon|nobody|postfix) <(.+)>$/   REPLACE From: __DISPLAY_NAME__ <$2>
-/^From: (root|www|daemon|nobody|postfix)$/           REPLACE From: __DISPLAY_NAME__ <noreply@localhost>
+# Sistem hesaplarının (root, www, ...) From görünen adını __DISPLAY_NAME__ ile değiştir.
+# /i => büyük/küçük harf duyarsız; boşluklar toleranslı; tırnaklı ada da izin ver.
+/^From:[[:space:]]*"?(root|www|daemon|nobody|postfix|mail)"?[[:space:]]*<(.+)>[[:space:]]*$/i   REPLACE From: __DISPLAY_NAME__ <$2>
+/^From:[[:space:]]*"?(root|www|daemon|nobody|postfix|mail)"?[[:space:]]*$/i                      REPLACE From: __DISPLAY_NAME__ <noreply@localhost>

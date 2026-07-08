@@ -50,6 +50,9 @@ services:
       # Display name — From header'ındaki "root" vb. sistem adlarını değiştirir
       # entrypoint-wrapper.sh bu değeri okuyarak /etc/postfix/header_checks oluşturur
       MAIL_DISPLAY_NAME: ${MAIL_DISPLAY_NAME:-Mail}
+      # cleanup aşamasında (gönderim anında) yeniden yaz — en güvenilir yer.
+      # smtp_header_checks yalnızca dışarı teslim aşamasında çalışır; her ikisini de tanımlıyoruz.
+      POSTFIX_header_checks:      "regexp:/etc/postfix/header_checks"
       POSTFIX_smtp_header_checks: "regexp:/etc/postfix/header_checks"
 
       # TLS

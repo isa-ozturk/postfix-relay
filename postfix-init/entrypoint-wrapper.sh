@@ -8,7 +8,7 @@ echo "[entrypoint-wrapper] Display name: '${DISPLAY_NAME}'"
 
 # Template'den gerçek dosyayı üret
 sed "s/__DISPLAY_NAME__/${DISPLAY_NAME}/g" \
-    /etc/postfix/header_checks.template \
+    /header_checks.template \
     > /etc/postfix/header_checks
 
 echo "[entrypoint-wrapper] /etc/postfix/header_checks oluşturuldu:"
