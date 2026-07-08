@@ -18,7 +18,7 @@ services:
   # ---------------------------------------------------------------------------
   postfix:
     image: boky/postfix:latest
-    container_name: ${COMPOSE_PROJECT_NAME}_postfix
+    container_name: ${COMPOSE_PROJECT_NAME:-mailserver}_postfix
     restart: unless-stopped
     environment:
       HOSTNAME:   ${MAIL_HOSTNAME}
@@ -97,7 +97,7 @@ services:
     build:
       context: ./logviewer
       dockerfile: Dockerfile
-    container_name: ${COMPOSE_PROJECT_NAME}_logviewer
+    container_name: ${COMPOSE_PROJECT_NAME:-mailserver}_logviewer
     restart: unless-stopped
     environment:
       LOG_REFRESH_INTERVAL: "${LOG_REFRESH_INTERVAL:-30}"
