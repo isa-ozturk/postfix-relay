@@ -33,7 +33,6 @@ services:
       ALLOW_EMPTY_SENDER_DOMAINS: "1"
 
       # DKIM imzalama — anahtarlar volume'da kalıcı saklanır
-      # İlk kurulumda: setup/dkim-setup.sh çalıştır
       DKIM_AUTOGENERATE: ${DKIM_AUTOGENERATE:-0}
 
       # Upstream relay (opsiyonel — boş = direkt MX delivery)
@@ -52,6 +51,15 @@ services:
       POSTFIX_reject_sender_login_mismatch: ""
       POSTFIX_smtpd_sender_login_maps: ""
 
+      # --- Display name yeniden yazma ---
+      # Gönderen adı belirtilmemişse (ör. "root <...>") bu isimle değiştirilir
+      # Sonuç: "Hisar <orijinal-adres@domain>"
+      # smtp_generic_maps: giden maillerde From adresini yeniden yazar
+      POSTFIX_smtp_generic_maps: lmdb:/etc/postfix/generic
+      # sender_canonical_maps: envelope ve header'daki root, www vb. sistem
+      # kullanıcı adlarını gerçek adreslere çevirir
+      POSTFIX_sender_canonical_maps: lmdb:/etc/postfix/sender_canonical
+
       # TLS
       POSTFIX_smtpd_tls_cert_file:    /etc/ssl/mail/fullchain.pem
       POSTFIX_smtpd_tls_key_file:     /etc/ssl/mail/privkey.pem
@@ -67,18 +75,23 @@ services:
       POSTFIX_myorigin:      ${MAIL_DOMAIN}
 
       # Boş = inbound delivery yok (sadece outbound relay)
-      # Mail almak istersen: "${MAIL_HOSTNAME}, ${MAIL_DOMAIN}, localhost"
       POSTFIX_mydestination: ${POSTFIX_MYDESTINATION:-}
 
-      # Logları hem stdout hem dosyaya yaz (logviewer için dosya gerekli)
+      # Logları dosyaya yaz (logviewer volume'u okur)
       POSTFIX_maillog_file: /var/log/postfix/mail.log
+
+      # Display name env değişkenleri — entrypoint script'i bu değerleri
+      # /etc/postfix/generic ve sender_canonical dosyalarına yazar
+      MAIL_DISPLAY_NAME: ${MAIL_DISPLAY_NAME:-Mail}
+      MAIL_DEFAULT_FROM: ${MAIL_DEFAULT_FROM:-noreply@${MAIL_DOMAIN}}
 
     volumes:
       - ${SSL_CERT_DIR}:/etc/ssl/mail:ro
       - postfix_spool:/var/spool/postfix
       - postfix_logs:/var/log/postfix
-      # DKIM anahtarları — restart'ta kaybolmaz
       - dkim_keys:/etc/opendkim/keys
+      # Display name map dosyalarını oluşturan script
+      - ./postfix-init/setup-generic.sh:/docker-entrypoint.d/99-setup-generic.sh:ro
 
     ports:
       - "${SMTP_BIND_IP:-0.0.0.0}:${SMTP_PORT:-25}:25"
@@ -92,7 +105,6 @@ services:
 
   # ---------------------------------------------------------------------------
   # LOG VIEWER — Mail akış izleme web arayüzü
-  # ${ADMIN_HOST}/maillog adresinde Traefik üzerinden yayınlanır
   # ---------------------------------------------------------------------------
   logviewer:
     build:
@@ -112,31 +124,23 @@ services:
     labels:
       - "traefik.enable=true"
       - "traefik.docker.network=${TRAEFIK_NETWORK:-dokploy-network}"
-      # HTTPS
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.rule=Host(`${ADMIN_HOST}`) && PathPrefix(`/maillog`)"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.entrypoints=websecure"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.tls=true"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.service=${COMPOSE_PROJECT_NAME}-maillog-svc"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.priority=10"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.middlewares=${COMPOSE_PROJECT_NAME}-strip,${COMPOSE_PROJECT_NAME}-ipwl"
-      # StripPrefix: /maillog kaldır
       - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-strip.stripprefix.prefixes=/maillog"
-      # IP Whitelist
       - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-ipwl.ipwhitelist.sourcerange=${LOGVIEWER_ALLOWED_NETWORKS:-0.0.0.0/0}"
-      # HTTP → HTTPS
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog-http.rule=Host(`${ADMIN_HOST}`) && PathPrefix(`/maillog`)"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog-http.entrypoints=web"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog-http.middlewares=${COMPOSE_PROJECT_NAME}-https-redir"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog-http.priority=10"
       - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-https-redir.redirectscheme.scheme=https"
       - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-https-redir.redirectscheme.permanent=true"
-      # Service
       - "traefik.http.services.${COMPOSE_PROJECT_NAME}-maillog-svc.loadbalancer.server.port=8080"
       - "com.centurylinklabs.watchtower.enable=true"
 
-# ---------------------------------------------------------------------------
-# VOLUMES
-# ---------------------------------------------------------------------------
 volumes:
   postfix_spool:
     driver: local
@@ -145,13 +149,9 @@ volumes:
   dkim_keys:
     driver: local
 
-# ---------------------------------------------------------------------------
-# NETWORKS
-# ---------------------------------------------------------------------------
 networks:
   internal:
     driver: bridge
-
   proxy:
     external: true
     name: ${TRAEFIK_NETWORK:-dokploy-network}
