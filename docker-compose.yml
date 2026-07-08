@@ -8,7 +8,7 @@
 # SSL     : Sunucudaki mevcut sertifikayı ${SSL_CERT_DIR} ile bind mount eder
 #
 # Kullanım: .env dosyasını doldur → docker compose up -d
-# Repo    : https://github.com/USERNAME/postfix-relay
+# Repo    : https://github.com/isa-ozturk/postfix-relay
 ###############################################################################
 
 services:
@@ -23,7 +23,14 @@ services:
     environment:
       HOSTNAME:   ${MAIL_HOSTNAME}
       DOMAINNAME: ${MAIL_DOMAIN}
-      MYNETWORKS: ${MYNETWORKS}
+
+      # MYNETWORKS deprecated — POSTFIX_ prefix ile kullan
+      POSTFIX_mynetworks: ${MYNETWORKS}
+
+      # boky/postfix zorunlu değişken: gönderim yapılacak domain listesi
+      # ALLOW_EMPTY_SENDER_DOMAINS=1 → domain kısıtlaması kaldırılır
+      # Güvenlik mynetworks IP kısıtlaması ile sağlanır, domain listesi gerekmez
+      ALLOW_EMPTY_SENDER_DOMAINS: "1"
 
       # Upstream relay (opsiyonel — boş = direkt MX delivery)
       RELAYHOST:     ${RELAYHOST:-}
