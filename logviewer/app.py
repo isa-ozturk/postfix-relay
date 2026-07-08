@@ -15,10 +15,7 @@ from flask import Flask, render_template, request, jsonify, abort
 
 app = Flask(__name__)
 
-APP_TITLE  = os.getenv("APP_TITLE", "Mail Log Viewer")
-
-# Traefik StripPrefix /maillog'u kaldırıyor — Flask'a / geliyor.
-# Tüm linklerin /maillog prefix'i ile üretilmesi için base path tanımlıyoruz.
+APP_TITLE = os.getenv("APP_TITLE", "Mail Log Viewer")
 BASE_PATH = os.getenv("BASE_PATH", "/maillog")
 
 LOG_PATHS = [
@@ -26,12 +23,6 @@ LOG_PATHS = [
     "/var/log/mail.log",
     "/var/log/syslog",
 ]
-
-# Postfix logları /dev/stdout'a yazılıyorsa docker logs üzerinden okuyoruz.
-# Container kendi logunu /proc/1/fd/1'den okuyamaz, bu yüzden
-# docker-compose'da POSTFIX_maillog_file=/var/log/postfix/mail.log
-# veya rsyslog ile dosyaya yazılması gerekiyor.
-# Bu uygulama her iki modu da destekler.
 
 STATUS_COLORS = {
     "sent":      "#22c55e",
@@ -104,21 +95,30 @@ def parse_postfix_log(lines: list[str], limit: int = 500) -> list[dict]:
     queue_map: dict[str, dict] = {}
     noqueue_events: list[dict] = []
 
-    re_from = re.compile(
-        r"(\w{3}\s+\d+\s+[\d:]+).*postfix/(?:smtpd|pickup|sendmail)\[\d+\]:\s+"
-        r"([0-9A-F]{10,12}):\s+from=<([^>]*)>,\s+size=(\d+)"
+    # Timestamp: "Jul  8 18:13:00" veya "Jul 08 18:13:00"
+    TS = r"(\w{3}\s+\d{1,2}\s+[\d:]+)"
+
+    # qmgr satırı: from + size — en güvenilir kaynak
+    re_qmgr = re.compile(
+        TS + r".*postfix/qmgr\[\d+\]:\s+([0-9A-F]{6,12}):\s+"
+        r"from=<([^>]*)>,\s+size=(\d+)"
     )
+    # smtp/lmtp satırı: teslim durumu
     re_to = re.compile(
-        r"(\w{3}\s+\d+\s+[\d:]+).*postfix/(?:smtp|local|virtual|lmtp)\[\d+\]:\s+"
-        r"([0-9A-F]{10,12}):\s+to=<([^>]*)>,.*?(?:relay=([^,]+),.*?)?status=(\w+)\s*\(([^)]*)\)"
+        TS + r".*postfix/(?:smtp|lmtp|local|virtual)\[\d+\]:\s+"
+        r"([0-9A-F]{6,12}):\s+to=<([^>]*)>,"
+        r".*?(?:relay=([^,]+),.*?)?status=(\w+)\s*\(([^)]*)\)"
     )
-    re_reject = re.compile(
-        r"(\w{3}\s+\d+\s+[\d:]+).*NOQUEUE: reject:.*?from=<([^>]*)>.*?to=<([^>]*)>:.*?(\d{3}[^;]*)"
-    )
+    # smtpd satırı: kaynak IP
     re_client = re.compile(
-        r"([0-9A-F]{10,12}): client=([^\[]+)\[([^\]]+)\]"
+        r"([0-9A-F]{6,12}): client=([^\[]+)\[([^\]]+)\]"
+    )
+    # NOQUEUE reject
+    re_reject = re.compile(
+        TS + r".*NOQUEUE: reject:.*?from=<([^>]*)>.*?to=<([^>]*)>:.*?(\d{3}[^;]*)"
     )
 
+    # 1. pass — client IP map
     client_map: dict[str, str] = {}
     for line in lines:
         m = re_client.search(line)
@@ -126,14 +126,16 @@ def parse_postfix_log(lines: list[str], limit: int = 500) -> list[dict]:
             qid, hostname, ip = m.groups()
             client_map[qid] = f"{hostname.strip()}[{ip}]"
 
+    # 2. pass — olayları topla
     for line in lines:
-        m = re_from.search(line)
+        # qmgr → from + size
+        m = re_qmgr.search(line)
         if m:
             ts, qid, sender, size = m.groups()
             if qid not in queue_map:
                 queue_map[qid] = {
                     "queue_id":   qid,
-                    "timestamp":  ts,
+                    "timestamp":  ts.strip(),
                     "from":       sender or "<>",
                     "size":       int(size),
                     "recipients": [],
@@ -141,6 +143,7 @@ def parse_postfix_log(lines: list[str], limit: int = 500) -> list[dict]:
                 }
             continue
 
+        # smtp → to + status
         m = re_to.search(line)
         if m:
             ts, qid, recipient, relay, status, detail = m.groups()
@@ -150,16 +153,17 @@ def parse_postfix_log(lines: list[str], limit: int = 500) -> list[dict]:
                     "relay":  (relay or "").strip(),
                     "status": status.lower(),
                     "detail": (detail or "").strip()[:300],
-                    "time":   ts,
+                    "time":   ts.strip(),
                 })
             continue
 
+        # NOQUEUE reject
         m = re_reject.search(line)
         if m:
             ts, sender, recipient, reason = m.groups()
             noqueue_events.append({
                 "queue_id":   "NOQUEUE",
-                "timestamp":  ts,
+                "timestamp":  ts.strip(),
                 "from":       sender or "<>",
                 "size":       0,
                 "client":     "",
@@ -168,7 +172,7 @@ def parse_postfix_log(lines: list[str], limit: int = 500) -> list[dict]:
                     "relay":  "—",
                     "status": "rejected",
                     "detail": reason.strip()[:300],
-                    "time":   ts,
+                    "time":   ts.strip(),
                 }],
             })
 
@@ -177,7 +181,8 @@ def parse_postfix_log(lines: list[str], limit: int = 500) -> list[dict]:
         if not data["recipients"]:
             data["recipients"] = [{
                 "to": "—", "relay": "—", "status": "queued",
-                "detail": "Kuyruğa alındı, henüz teslim edilmedi", "time": data["timestamp"]
+                "detail": "Kuyruğa alındı, henüz teslim edilmedi",
+                "time": data["timestamp"],
             }]
         events.append(data)
 
