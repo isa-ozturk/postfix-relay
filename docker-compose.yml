@@ -21,7 +21,7 @@ services:
   postfix:
     build:
       context: ./postfix-init
-      dockerfile: Dockerfile
+      dockerfile: Dockerfile-postfix
     container_name: mailserver_postfix
     restart: unless-stopped
     environment:
