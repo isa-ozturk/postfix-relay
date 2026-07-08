@@ -32,6 +32,10 @@ services:
       # Güvenlik mynetworks IP kısıtlaması ile sağlanır, domain listesi gerekmez
       ALLOW_EMPTY_SENDER_DOMAINS: "1"
 
+      # DKIM imzalama — anahtarlar volume'da kalıcı saklanır
+      # İlk kurulumda: setup/dkim-setup.sh çalıştır
+      DKIM_AUTOGENERATE: ${DKIM_AUTOGENERATE:-0}
+
       # Upstream relay (opsiyonel — boş = direkt MX delivery)
       RELAYHOST:     ${RELAYHOST:-}
       SMTP_SERVER:   ${SMTP_SMARTHOST:-}
@@ -72,6 +76,8 @@ services:
       - ${SSL_CERT_DIR}:/etc/ssl/mail:ro
       - postfix_spool:/var/spool/postfix
       - postfix_logs:/var/log/postfix
+      # DKIM anahtarları — restart'ta kaybolmaz
+      - dkim_keys:/etc/opendkim/keys
 
     ports:
       - "${SMTP_BIND_IP:-0.0.0.0}:${SMTP_PORT:-25}:25"
@@ -134,6 +140,8 @@ volumes:
   postfix_spool:
     driver: local
   postfix_logs:
+    driver: local
+  dkim_keys:
     driver: local
 
 # ---------------------------------------------------------------------------
