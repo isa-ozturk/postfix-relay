@@ -1,0 +1,4 @@
+# Postfix smtp_header_checks — otomatik oluşturuldu
+# MAIL_DISPLAY_NAME: __DISPLAY_NAME__
+/^From: (root|www|daemon|nobody|postfix) <(.+)>$/   REPLACE From: __DISPLAY_NAME__ <$2>
+/^From: (root|www|daemon|nobody|postfix)$/           REPLACE From: __DISPLAY_NAME__ <noreply@localhost>

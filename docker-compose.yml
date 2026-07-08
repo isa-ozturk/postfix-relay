@@ -15,50 +15,42 @@ services:
 
   # ---------------------------------------------------------------------------
   # POSTFIX — Outbound SMTP relay
+  # boky/postfix üzerine custom entrypoint eklenmiş image
+  # MAIL_DISPLAY_NAME env'den header_checks dosyasını otomatik oluşturur
   # ---------------------------------------------------------------------------
   postfix:
-    image: boky/postfix:latest
+    build:
+      context: ./postfix-init
+      dockerfile: Dockerfile
     container_name: mailserver_postfix
     restart: unless-stopped
     environment:
       HOSTNAME:   ${MAIL_HOSTNAME}
       DOMAINNAME: ${MAIL_DOMAIN}
 
-      # MYNETWORKS deprecated — POSTFIX_ prefix ile kullan
       POSTFIX_mynetworks: ${MYNETWORKS}
-
-      # boky/postfix zorunlu değişken: gönderim yapılacak domain listesi
-      # ALLOW_EMPTY_SENDER_DOMAINS=1 → domain kısıtlaması kaldırılır
-      # Güvenlik mynetworks IP kısıtlaması ile sağlanır, domain listesi gerekmez
       ALLOW_EMPTY_SENDER_DOMAINS: "1"
 
-      # DKIM imzalama — anahtarlar volume'da kalıcı saklanır
       DKIM_AUTOGENERATE: ${DKIM_AUTOGENERATE:-0}
 
-      # Upstream relay (opsiyonel — boş = direkt MX delivery)
+      # Upstream relay (opsiyonel)
       RELAYHOST:     ${RELAYHOST:-}
       SMTP_SERVER:   ${SMTP_SMARTHOST:-}
       SMTP_USERNAME: ${SMTP_SMARTHOST_USER:-}
       SMTP_PASSWORD: ${SMTP_SMARTHOST_PASS:-}
       SMTP_PORT:     ${SMTP_SMARTHOST_PORT:-587}
 
-      # --- Gönderen adres doğrulaması KAPALI ---
-      # mynetworks'ten gelen mailler herhangi bir From: adresi kullanabilir
-      # printer@domain, noreply@domain vb. — hesap oluşturmak GEREKMEZ
+      # Gönderen adres doğrulaması KAPALI
       POSTFIX_smtpd_sender_restrictions: "permit_mynetworks, permit_sasl_authenticated, permit"
       POSTFIX_smtpd_recipient_restrictions: "permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination"
       POSTFIX_smtpd_relay_restrictions: "permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination"
       POSTFIX_reject_sender_login_mismatch: ""
       POSTFIX_smtpd_sender_login_maps: ""
 
-      # --- Display name yeniden yazma ---
-      # Gönderen adı belirtilmemişse (ör. "root <...>") bu isimle değiştirilir
-      # Sonuç: "Hisar <orijinal-adres@domain>"
-      # smtp_generic_maps: giden maillerde From adresini yeniden yazar
-      POSTFIX_smtp_generic_maps: lmdb:/etc/postfix/generic
-      # sender_canonical_maps: envelope ve header'daki root, www vb. sistem
-      # kullanıcı adlarını gerçek adreslere çevirir
-      POSTFIX_sender_canonical_maps: lmdb:/etc/postfix/sender_canonical
+      # Display name — From header'ındaki "root" vb. sistem adlarını değiştirir
+      # entrypoint-wrapper.sh bu değeri okuyarak /etc/postfix/header_checks oluşturur
+      MAIL_DISPLAY_NAME: ${MAIL_DISPLAY_NAME:-Mail}
+      POSTFIX_smtp_header_checks: "regexp:/etc/postfix/header_checks"
 
       # TLS
       POSTFIX_smtpd_tls_cert_file:    /etc/ssl/mail/fullchain.pem
@@ -66,32 +58,18 @@ services:
       POSTFIX_smtpd_tls_security_level: may
       POSTFIX_smtp_tls_security_level:  may
 
-      # Mesaj boyutu limiti
       POSTFIX_message_size_limit: ${MAX_MESSAGE_SIZE:-26214400}
-
-      # Temel parametreler
       POSTFIX_myhostname:    ${MAIL_HOSTNAME}
       POSTFIX_mydomain:      ${MAIL_DOMAIN}
       POSTFIX_myorigin:      ${MAIL_DOMAIN}
-
-      # Boş = inbound delivery yok (sadece outbound relay)
       POSTFIX_mydestination: ${POSTFIX_MYDESTINATION:-}
-
-      # Logları dosyaya yaz (logviewer volume'u okur)
-      POSTFIX_maillog_file: /var/log/postfix/mail.log
-
-      # Display name env değişkenleri — entrypoint script'i bu değerleri
-      # /etc/postfix/generic ve sender_canonical dosyalarına yazar
-      MAIL_DISPLAY_NAME: ${MAIL_DISPLAY_NAME:-Mail}
-      MAIL_DEFAULT_FROM: ${MAIL_DEFAULT_FROM:-noreply@${MAIL_DOMAIN}}
+      POSTFIX_maillog_file:  /var/log/postfix/mail.log
 
     volumes:
       - ${SSL_CERT_DIR}:/etc/ssl/mail:ro
       - postfix_spool:/var/spool/postfix
       - postfix_logs:/var/log/postfix
       - dkim_keys:/etc/opendkim/keys
-      # Display name map dosyalarını oluşturan script
-      - ./postfix-init/setup-generic.sh:/docker-entrypoint.d/99-setup-generic.sh:ro
 
     ports:
       - "${SMTP_BIND_IP:-0.0.0.0}:${SMTP_PORT:-25}:25"
@@ -104,7 +82,7 @@ services:
       - "traefik.enable=false"
 
   # ---------------------------------------------------------------------------
-  # LOG VIEWER — Mail akış izleme web arayüzü
+  # LOG VIEWER
   # ---------------------------------------------------------------------------
   logviewer:
     build:

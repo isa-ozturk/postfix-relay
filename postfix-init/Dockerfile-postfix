@@ -1,0 +1,11 @@
+FROM boky/postfix:latest
+
+# header_checks template'ini kopyala
+COPY header_checks.template /etc/postfix/header_checks.template
+
+# Entrypoint wrapper: MAIL_DISPLAY_NAME env'den alarak
+# header_checks dosyasını oluşturur, sonra orijinal entrypoint'i çalıştırır
+COPY entrypoint-wrapper.sh /entrypoint-wrapper.sh
+RUN chmod +x /entrypoint-wrapper.sh
+
+ENTRYPOINT ["/entrypoint-wrapper.sh"]
