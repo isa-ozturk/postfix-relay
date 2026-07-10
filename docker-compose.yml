@@ -83,7 +83,8 @@ services:
 
     labels:
       - "traefik.enable=false"
-
+      - "com.centurylinklabs.watchtower.enable=false"
+      
   # ---------------------------------------------------------------------------
   # LOG VIEWER
   # ---------------------------------------------------------------------------
@@ -104,7 +105,7 @@ services:
       - proxy
     labels:
       - "traefik.enable=true"
-      - "traefik.docker.network=${TRAEFIK_NETWORK:-dokploy-network}"
+      - "traefik.docker.network=dokploy-network"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.rule=Host(`${ADMIN_HOST}`) && PathPrefix(`/maillog`)"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.entrypoints=websecure"
       - "traefik.http.routers.${COMPOSE_PROJECT_NAME}-maillog.tls=true"
@@ -120,7 +121,7 @@ services:
       - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-https-redir.redirectscheme.scheme=https"
       - "traefik.http.middlewares.${COMPOSE_PROJECT_NAME}-https-redir.redirectscheme.permanent=true"
       - "traefik.http.services.${COMPOSE_PROJECT_NAME}-maillog-svc.loadbalancer.server.port=8080"
-      - "com.centurylinklabs.watchtower.enable=true"
+      - "com.centurylinklabs.watchtower.enable=false"
 
 volumes:
   postfix_spool:
@@ -135,4 +136,4 @@ networks:
     driver: bridge
   proxy:
     external: true
-    name: ${TRAEFIK_NETWORK:-dokploy-network}
+    name: dokploy-network
