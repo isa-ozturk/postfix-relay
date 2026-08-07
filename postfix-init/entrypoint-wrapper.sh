@@ -15,7 +15,7 @@ DOMAIN="${DOMAINNAME:-localhost}"
 echo "[wrapper] Display name: '${DISPLAY_NAME}' / Domain: '${DOMAIN}'"
 
 sed "s/__DISPLAY_NAME__/${DISPLAY_NAME}/g" \
-    /etc/postfix/header_checks.template \
+     /header_checks.template \
     > /etc/postfix/header_checks
 
 echo "[wrapper] /etc/postfix/header_checks oluşturuldu."
