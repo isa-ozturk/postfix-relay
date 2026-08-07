@@ -31,7 +31,11 @@ services:
       POSTFIX_mynetworks: ${MYNETWORKS}
       ALLOW_EMPTY_SENDER_DOMAINS: "1"
 
-      DKIM_AUTOGENERATE: ${DKIM_AUTOGENERATE:-0}
+      # DKIM — entrypoint-wrapper.sh her başlangıçta KeyTable/SigningTable oluşturur
+      # Anahtar dkim_keys volume'unda kalıcı saklanır, restart'ta kaybolmaz
+      DKIM_AUTOGENERATE: ${DKIM_AUTOGENERATE:-1}
+      DKIM_SELECTOR:     ${DKIM_SELECTOR:-mail}
+
 
       # Upstream relay (opsiyonel)
       RELAYHOST:     ${RELAYHOST:-}
@@ -54,6 +58,9 @@ services:
       # smtp_header_checks yalnızca dışarı teslim aşamasında çalışır; her ikisini de tanımlıyoruz.
       POSTFIX_header_checks:      "regexp:/etc/postfix/header_checks"
       POSTFIX_smtp_header_checks: "regexp:/etc/postfix/header_checks"
+      
+      # milter hata verse bile mail gitsin (DKIM imzasız geçer)
+      POSTFIX_milter_default_action: accept
 
       # TLS
       POSTFIX_smtpd_tls_cert_file:    /etc/ssl/mail/fullchain.pem
