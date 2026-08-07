@@ -1,73 +1,62 @@
 #!/bin/sh
 # Postfix başlamadan önce:
-# 1. header_checks dosyasını MAIL_DISPLAY_NAME env'den oluşturur
-# 2. opendkim KeyTable, SigningTable, TrustedHosts dosyalarını oluşturur
+# 1. sender_canonical_maps — sistem kullanıcılarını (root, www, daemon)
+#    MAIL_DEFAULT_FROM adresine çevirir. DKIM imzasından önce çalışır.
+# 2. opendkim KeyTable, SigningTable, TrustedHosts — her restart'ta yeniden oluşturur.
 # Sonra orijinal boky/postfix entrypoint'ini çalıştırır.
 
 set -e
 
-# ---------------------------------------------------------------------------
-# 1. DISPLAY NAME — From header düzeltme
-# ---------------------------------------------------------------------------
-DISPLAY_NAME="${MAIL_DISPLAY_NAME:-Mail}"
 DOMAIN="${DOMAINNAME:-localhost}"
+DEFAULT_FROM="${MAIL_DEFAULT_FROM:-noreply@${DOMAIN}}"
+DKIM_SELECTOR="${DKIM_SELECTOR:-mail}"
+DKIM_KEY_DIR="/etc/opendkim/keys/${DOMAIN}"
 
-echo "[wrapper] Display name: '${DISPLAY_NAME}' / Domain: '${DOMAIN}'"
+echo "[wrapper] Domain: '${DOMAIN}'"
+echo "[wrapper] Default from: '${DEFAULT_FROM}'"
 
-sed "s/__DISPLAY_NAME__/${DISPLAY_NAME}/g" \
-     /header_checks.template \
-    > /etc/postfix/header_checks
+# ---------------------------------------------------------------------------
+# 1. SENDER CANONICAL — sistem kullanıcılarını gerçek adrese çevir
+# root, www, daemon vb. → noreply@domain
+# DKIM imzasından ÖNCE envelope'da uygulanır — imzayı bozmaz
+# ---------------------------------------------------------------------------
+cat > /etc/postfix/sender_canonical << CANONICAL
+root@${DOMAIN}      ${DEFAULT_FROM}
+root                ${DEFAULT_FROM}
+www@${DOMAIN}       ${DEFAULT_FROM}
+www                 ${DEFAULT_FROM}
+daemon@${DOMAIN}    ${DEFAULT_FROM}
+daemon              ${DEFAULT_FROM}
+nobody@${DOMAIN}    ${DEFAULT_FROM}
+nobody              ${DEFAULT_FROM}
+postfix@${DOMAIN}   ${DEFAULT_FROM}
+postfix             ${DEFAULT_FROM}
+CANONICAL
 
-echo "[wrapper] /etc/postfix/header_checks oluşturuldu."
+postmap lmdb:/etc/postfix/sender_canonical 2>/dev/null || \
+postmap hash:/etc/postfix/sender_canonical
+
+echo "[wrapper] sender_canonical oluşturuldu → ${DEFAULT_FROM}"
 
 # ---------------------------------------------------------------------------
 # 2. DKIM — KeyTable, SigningTable, TrustedHosts
+# boky/postfix'in kendi sistemi: anahtar /etc/opendkim/keys/${DOMAIN}.private
+# olmalı. Volume'daki anahtarı doğru konuma link'le.
 # ---------------------------------------------------------------------------
-DKIM_KEY_DIR="/etc/opendkim/keys/${DOMAIN}"
-DKIM_SELECTOR="${DKIM_SELECTOR:-mail}"
 
-# Anahtar yoksa ve DKIM_AUTOGENERATE=1 ise üret
-if [ ! -f "${DKIM_KEY_DIR}/${DKIM_SELECTOR}.private" ]; then
-    if [ "${DKIM_AUTOGENERATE:-0}" = "1" ]; then
-        echo "[wrapper] DKIM anahtarı bulunamadı, üretiliyor..."
-        mkdir -p "${DKIM_KEY_DIR}"
-        opendkim-genkey -b 2048 -d "${DOMAIN}" -D "${DKIM_KEY_DIR}" -s "${DKIM_SELECTOR}" -v
-        chown -R opendkim:opendkim "${DKIM_KEY_DIR}"
-        chmod 600 "${DKIM_KEY_DIR}/${DKIM_SELECTOR}.private"
-        echo "[wrapper] DNS'e eklenecek public key:"
-        cat "${DKIM_KEY_DIR}/${DKIM_SELECTOR}.txt"
-    else
-        echo "[wrapper] UYARI: DKIM anahtarı yok: ${DKIM_KEY_DIR}/${DKIM_SELECTOR}.private"
-        echo "[wrapper] DKIM_AUTOGENERATE=1 yaparak otomatik üretebilirsin."
+# Volume'daki anahtarı (keys/domain/mail.private) image'ın beklediği
+# konuma (keys/domain.private) sembolik link ile bağla
+if [ -f "${DKIM_KEY_DIR}/${DKIM_SELECTOR}.private" ]; then
+    if [ ! -f "/etc/opendkim/keys/${DOMAIN}.private" ]; then
+        ln -sf "${DKIM_KEY_DIR}/${DKIM_SELECTOR}.private" \
+               "/etc/opendkim/keys/${DOMAIN}.private"
+        echo "[wrapper] DKIM key symlink: ${DKIM_KEY_DIR}/${DKIM_SELECTOR}.private → /etc/opendkim/keys/${DOMAIN}.private"
     fi
-else
-    echo "[wrapper] DKIM anahtarı mevcut: ${DKIM_KEY_DIR}/${DKIM_SELECTOR}.private"
-    chown opendkim:opendkim "${DKIM_KEY_DIR}/${DKIM_SELECTOR}.private" 2>/dev/null || true
 fi
-
-
-cat > /etc/opendkim/KeyTable << KEYTABLE
-${DKIM_SELECTOR}._domainkey.${DOMAIN} ${DOMAIN}:${DKIM_SELECTOR}:${DKIM_KEY_DIR}/${DKIM_SELECTOR}.private
-KEYTABLE
-
-cat > /etc/opendkim/SigningTable << SIGNTABLE
-*@${DOMAIN} ${DKIM_SELECTOR}._domainkey.${DOMAIN}
-SIGNTABLE
-
-cat > /etc/opendkim/TrustedHosts << TRUSTED
-127.0.0.1
-localhost
-${DOMAIN}
-mail.${DOMAIN}
-172.16.0.0/12
-10.0.0.0/8
-TRUSTED
-
-echo "[wrapper] opendkim tabloları oluşturuldu: KeyTable, SigningTable, TrustedHosts"
-
 
 # ---------------------------------------------------------------------------
 # 3. Orijinal boky/postfix entrypoint'ini çalıştır
+# run.sh içindeki postfix_setup_dkim ALLOWED_SENDER_DOMAINS ile
+# KeyTable/SigningTable'ı otomatik oluşturur
 # ---------------------------------------------------------------------------
-# Orijinal boky/postfix entrypoint'ini çalıştır
 exec /scripts/run.sh "$@"

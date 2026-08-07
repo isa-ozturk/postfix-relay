@@ -30,6 +30,7 @@ services:
 
       POSTFIX_mynetworks: ${MYNETWORKS}
       ALLOW_EMPTY_SENDER_DOMAINS: "1"
+      ALLOWED_SENDER_DOMAINS: ${MAIL_DOMAIN:-}
 
       # DKIM — entrypoint-wrapper.sh her başlangıçta KeyTable/SigningTable oluşturur
       # Anahtar dkim_keys volume'unda kalıcı saklanır, restart'ta kaybolmaz
