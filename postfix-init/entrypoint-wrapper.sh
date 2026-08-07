@@ -69,4 +69,5 @@ echo "[wrapper] opendkim tabloları oluşturuldu: KeyTable, SigningTable, Truste
 # ---------------------------------------------------------------------------
 # 3. Orijinal boky/postfix entrypoint'ini çalıştır
 # ---------------------------------------------------------------------------
-exec /bin/entrypoint.sh "$@"
+# Orijinal boky/postfix entrypoint'ini çalıştır
+exec /scripts/run.sh "$@"
